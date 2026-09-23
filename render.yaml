@@ -1,0 +1,50 @@
+# Render deployment blueprint.
+# In the Render dashboard: New -> Blueprint -> point at this repo, and it
+# will provision all three resources below automatically.
+databases:
+  - name: job-platform-db
+    plan: free
+    databaseName: jobplatform
+    user: jobplatform
+
+services:
+  # Django + DRF API
+  - type: web
+    name: job-platform-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"
+    startCommand: "gunicorn jobplatform.wsgi:application"
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: job-platform-db
+          property: connectionString
+      - key: FRONTEND_URL
+        value: "https://job-platform-frontend.onrender.com"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: "claude-sonnet-4-6"
+
+  # React (Vite) frontend, served as a static site
+  - type: web
+    name: job-platform-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: "https://job-platform-api.onrender.com/api"
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
